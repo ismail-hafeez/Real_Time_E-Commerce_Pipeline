@@ -10,13 +10,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Helper funtion for Task 1: ingest_data
-def ingest_retail_data(xlsx_path: str) -> None:
-    """
-    Reads XLSX using Pandas, writes directly to Parquet in S3 `raw/`
-    """
-    print(f"Reading {xlsx_path}...")
-    df = pd.read_excel(xlsx_path)
+# Helper function
+def upload_to_s3(df: pd.DataFrame, s3_key: str) -> None:
 
     print("Converting to Parquet...")
     parquet_buffer = io.BytesIO()
@@ -24,7 +19,6 @@ def ingest_retail_data(xlsx_path: str) -> None:
     df.to_parquet(parquet_buffer, index=False, engine='pyarrow')
 
     s3_bucket = os.getenv('S3_BUCKET_NAME')
-    s3_key = 'raw/online_retail.parquet'
     print(f"Uploading to s3://{s3_bucket}/{s3_key}...")
     
     s3_client = boto3.client('s3')
@@ -33,9 +27,20 @@ def ingest_retail_data(xlsx_path: str) -> None:
         Key=s3_key,
         Body=parquet_buffer.getvalue()
     )
-    print("Upload complete!")
+    print("Upload complete!")    
 
-# Helper function for Task 2: fetch_rates
+# Task 1: ingest_data
+def ingest_retail_data(xlsx_path: str) -> None:
+    """
+    Reads XLSX using Pandas, writes directly to Parquet in S3 `raw/`
+    """
+    print(f"Reading {xlsx_path}...")
+    df = pd.read_excel(xlsx_path)
+    s3_key = 'raw/online_retail.parquet'
+
+    upload_to_s3(df, s3_key)
+
+# Task 2: fetch_rates
 def fetch_and_upload_rates(start_date: str, end_date: str) -> None:
     """
     Fetches historical GBP to USD exchange rates from Frankfurter API,
@@ -60,21 +65,9 @@ def fetch_and_upload_rates(start_date: str, end_date: str) -> None:
     
     # Convert date string to datetime for easier joining in Spark
     df['date'] = pd.to_datetime(df['date'])
-    
-    print("Converting rates to Parquet...")
-    parquet_buffer = io.BytesIO()
-    df.to_parquet(parquet_buffer, index=False, engine='pyarrow')
-    
-    s3_bucket = os.getenv('S3_BUCKET_NAME')
     s3_key = 'raw/exchange_rates.parquet'
-    print(f"Uploading to s3://{s3_bucket}/{s3_key}...")
+
+    upload_to_s3(df, s3_key)
     
-    s3_client = boto3.client('s3')
-    s3_client.put_object(
-        Bucket=s3_bucket,
-        Key=s3_key,
-        Body=parquet_buffer.getvalue()
-    )
-    print("Upload complete!")
 
 # Helper function for Task 3:
