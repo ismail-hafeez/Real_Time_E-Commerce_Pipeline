@@ -12,6 +12,10 @@ load_dotenv()
 
 # Helper function
 def upload_to_s3(df: pd.DataFrame, s3_key: str) -> None:
+    """
+    Converts df to parquet
+    uploads to s3
+    """
 
     print("Converting to Parquet...")
     parquet_buffer = io.BytesIO()
@@ -36,6 +40,11 @@ def ingest_retail_data(xlsx_path: str) -> None:
     """
     print(f"Reading {xlsx_path}...")
     df = pd.read_excel(xlsx_path)
+    
+    print("Converting object/mixed columns to string for Parquet compatibility...")
+    for col in df.select_dtypes(include=['object']).columns:
+        df[col] = df[col].astype(str).replace('nan', None)
+        
     s3_key = 'raw/online_retail.parquet'
 
     upload_to_s3(df, s3_key)
@@ -68,6 +77,3 @@ def fetch_and_upload_rates(start_date: str, end_date: str) -> None:
     s3_key = 'raw/exchange_rates.parquet'
 
     upload_to_s3(df, s3_key)
-    
-
-# Helper function for Task 3:
