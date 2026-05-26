@@ -11,9 +11,10 @@
 """
 
 import sys
+import os
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.functions import col, when, to_date, round, row_number, lit
-from pyspark.sql.functions import avg, min, max, countDistinct
+from pyspark.sql.functions import min, max, countDistinct, avg
 from pyspark.sql.functions import dayofweek, year, month, quarter, date_format
 from pyspark.sql.window import Window
 
@@ -21,8 +22,29 @@ def upload_to_s3(df: DataFrame, file_name: str, output_path: str) -> None:
     print(f"Writing processed data to {output_path}{file_name}")
     df.write.mode("overwrite").parquet(f'{output_path}{file_name}')
 
-def _dim_customer(df_orders: DataFrame, output_path: str) -> None:
+def write_to_postgres(df: DataFrame, table_name: str) -> None:
+    # Load database connection details dynamically from environment variables
+    db_host = os.getenv("DB_WAREHOUSE_HOST", "postgres-warehouse")
+    db_port = os.getenv("DB_WAREHOUSE_PORT", "5432")
+    db_name = os.getenv("DB_WAREHOUSE_NAME", "ecom_warehouse")
+    db_user = os.getenv("DB_WAREHOUSE_USER", "warehouse_user")
+    db_pass = os.getenv("DB_WAREHOUSE_PASSWORD", "warehouse_password")
+    
+    db_url = f"jdbc:postgresql://{db_host}:{db_port}/{db_name}"
+    
+    print(f"Writing {table_name} to PostgreSQL...")
+    df.write \
+      .format("jdbc") \
+      .option("url", db_url) \
+      .option("dbtable", table_name) \
+      .option("user", db_user) \
+      .option("password", db_pass) \
+      .option("driver", "org.postgresql.Driver") \
+      .option("truncate", "true") \
+      .mode("overwrite") \
+      .save()
 
+def _dim_customer(df_orders: DataFrame, output_path: str) -> DataFrame:
     # Aggregate raw orders by customer
     dim_customer = df_orders.groupBy("customer_id").agg(
         max("country").alias("country"),
@@ -37,9 +59,10 @@ def _dim_customer(df_orders: DataFrame, output_path: str) -> None:
                                 .withColumn("rfm_segment", lit("Active")) # Placeholder for now
     
     upload_to_s3(dim_customer, 'dim_customer', output_path)
+    write_to_postgres(dim_customer, 'dim_customer')
+    return dim_customer
 
-def _dim_country(df_orders: DataFrame, output_path: str) -> None:
-
+def _dim_country(df_orders: DataFrame, output_path: str) -> DataFrame:
     # Define our list of European countries
     europe_countries = [
         "EIRE", "Germany", "France", "Netherlands", "Spain", "Switzerland", 
@@ -50,7 +73,7 @@ def _dim_country(df_orders: DataFrame, output_path: str) -> None:
 
     # Build dimension
     dim_country = df_orders.select("country").distinct() \
-    .withColumnRenamed("country", "country_name")
+        .withColumnRenamed("country", "country_name")
         
     # Map regions
     dim_country = dim_country.withColumn("region",
@@ -71,9 +94,10 @@ def _dim_country(df_orders: DataFrame, output_path: str) -> None:
     dim_country = dim_country.withColumn("country_key", row_number().over(windowSpec)) 
     
     upload_to_s3(dim_country, 'dim_country', output_path)
+    write_to_postgres(dim_country, 'dim_country')
+    return dim_country
 
-def _dim_products(df_orders: DataFrame, output_path: str) -> None:
-
+def _dim_products(df_orders: DataFrame, output_path: str) -> DataFrame:
     # Aggregate raw orders by stock_code
     dim_product = df_orders.groupBy("stock_code").agg(
         max("description").alias("description"),
@@ -86,9 +110,10 @@ def _dim_products(df_orders: DataFrame, output_path: str) -> None:
                                 .withColumn("category", lit("General")) # Placeholder for now
     
     upload_to_s3(dim_product, 'dim_product', output_path)
+    write_to_postgres(dim_product, 'dim_product')
+    return dim_product
 
-def _dim_date(df_orders: DataFrame, output_path: str) -> None:
-
+def _dim_date(df_orders: DataFrame, output_path: str) -> DataFrame:
     # 1. Get unique date values from the transaction table
     dim_date = df_orders.select(to_date("invoice_date").alias("full_date")).distinct()
 
@@ -103,6 +128,51 @@ def _dim_date(df_orders: DataFrame, output_path: str) -> None:
                     .withColumn("is_weekend", col("day_of_week").isin(5, 6))
 
     upload_to_s3(dim_date, 'dim_date', output_path)
+    write_to_postgres(dim_date, 'dim_date')
+    return dim_date
+
+def _build_fact_orders(df_orders: DataFrame, df_cust: DataFrame, df_prod: DataFrame, df_coun: DataFrame, output_path: str) -> None:
+    # Select only business keys and surrogate keys to prevent column naming ambiguity
+    df_cust_keys = df_cust.select("customer_id", "customer_key")
+    df_prod_keys = df_prod.select("stock_code", "product_key")
+    df_coun_keys = df_coun.select("country_name", "country_key")
+
+    # Perform inner joins to map surrogate keys
+    df_fact = df_orders.join(df_cust_keys, on="customer_id", how="inner") \
+                       .join(df_prod_keys, on="stock_code", how="inner") \
+                       .join(df_coun_keys, df_orders["country"] == df_coun_keys["country_name"], how="inner")
+
+    # Generate additional fields and the date_key via the direct format formula
+    df_fact = df_fact.withColumn("date_key", date_format(to_date(col("invoice_date")), "yyyyMMdd").cast("integer")) \
+                     .withColumn("exchange_rate", col("gbp_to_usd")) \
+                     .withColumn("is_anomaly", lit(False)) \
+                     .withColumn("event_timestamp", col("invoice_date"))
+
+    # Generate the surrogate fact key (order_key)
+    windowSpec = Window.orderBy("invoice_no", "stock_code")
+    df_fact = df_fact.withColumn("order_key", row_number().over(windowSpec))
+
+    # Select final columns to match fact_orders PostgreSQL schema
+    fact_orders = df_fact.select(
+        "order_key",
+        "invoice_no",
+        "customer_key",
+        "product_key",
+        "date_key",
+        "country_key",
+        "quantity",
+        "unit_price_gbp",
+        "unit_price_usd",
+        "total_amount_gbp",
+        "total_amount_usd",
+        "exchange_rate",
+        "is_cancelled",
+        "is_anomaly",
+        "event_timestamp"
+    )
+
+    upload_to_s3(fact_orders, 'fact_orders', output_path)
+    write_to_postgres(fact_orders, 'fact_orders')
 
 def main():
     if len(sys.argv) != 2:
@@ -126,11 +196,14 @@ def main():
     print(f"Reading Cleaned orders from {input_path}")
     df_orders = spark.read.parquet(input_path)
 
-    # Building Dimension Tables
-    _dim_customer(df_orders, output_path)
-    _dim_country(df_orders, output_path)
-    _dim_products(df_orders, output_path)
+    # Building Tables (In-Memory Pipeline)
+    df_cust = _dim_customer(df_orders, output_path)
+    df_coun = _dim_country(df_orders, output_path)
+    df_prod = _dim_products(df_orders, output_path)
     _dim_date(df_orders, output_path)
+    
+    print("Building Fact Table...")
+    _build_fact_orders(df_orders, df_cust, df_prod, df_coun, output_path)
     
     print("Spark star schema build complete!")
     spark.stop()
