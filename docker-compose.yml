@@ -16,12 +16,24 @@ x-airflow-common:
     AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-mock_key}
     AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-mock_secret}
     AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
+    S3_BUCKET_NAME: ${S3_BUCKET_NAME}
+    
+    # DB Warehouse Credentials for Spark & Airflow
+    DB_WAREHOUSE_HOST: ${DB_WAREHOUSE_HOST:-postgres-warehouse}
+    DB_WAREHOUSE_PORT: ${DB_WAREHOUSE_PORT:-5432}
+    DB_WAREHOUSE_NAME: ${DB_WAREHOUSE_NAME:-ecom_warehouse}
+    DB_WAREHOUSE_USER: ${DB_WAREHOUSE_USER:-warehouse_user}
+    DB_WAREHOUSE_PASSWORD: ${DB_WAREHOUSE_PASSWORD:-warehouse_password}
+
+    # Auto-create the Spark Connection in Airflow
+    AIRFLOW_CONN_SPARK_DEFAULT: '{"conn_type": "spark", "host": "spark://spark-master", "port": 7077}'
   volumes:
     - ./src/airflow_dags:/opt/airflow/dags
     - ./logs:/opt/airflow/logs
     - ./config:/opt/airflow/config
     - ./plugins:/opt/airflow/plugins
     - ./src/spark_jobs:/opt/airflow/spark_jobs
+    - ./data:/opt/airflow/data
   user: "50000:0"
   depends_on:
     airflow-postgres:
@@ -85,6 +97,11 @@ services:
       - SPARK_MODE=master
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-mock_key}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-mock_secret}
+      - DB_WAREHOUSE_HOST=${DB_WAREHOUSE_HOST:-postgres-warehouse}
+      - DB_WAREHOUSE_PORT=${DB_WAREHOUSE_PORT:-5432}
+      - DB_WAREHOUSE_NAME=${DB_WAREHOUSE_NAME:-ecom_warehouse}
+      - DB_WAREHOUSE_USER=${DB_WAREHOUSE_USER:-warehouse_user}
+      - DB_WAREHOUSE_PASSWORD=${DB_WAREHOUSE_PASSWORD:-warehouse_password}
     volumes:
       - ./src/spark_jobs:/opt/spark/spark_jobs
       - ./data:/opt/spark/data
@@ -104,6 +121,11 @@ services:
       - SPARK_WORKER_MEMORY=2G
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-mock_key}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-mock_secret}
+      - DB_WAREHOUSE_HOST=${DB_WAREHOUSE_HOST:-postgres-warehouse}
+      - DB_WAREHOUSE_PORT=${DB_WAREHOUSE_PORT:-5432}
+      - DB_WAREHOUSE_NAME=${DB_WAREHOUSE_NAME:-ecom_warehouse}
+      - DB_WAREHOUSE_USER=${DB_WAREHOUSE_USER:-warehouse_user}
+      - DB_WAREHOUSE_PASSWORD=${DB_WAREHOUSE_PASSWORD:-warehouse_password}
     volumes:
       - ./src/spark_jobs:/opt/spark/spark_jobs
       - ./data:/opt/spark/data
