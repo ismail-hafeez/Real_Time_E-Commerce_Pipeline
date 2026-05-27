@@ -8,6 +8,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        build-essential \
        libpq-dev \
+       default-jre-headless \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -24,4 +25,9 @@ RUN pip install --no-cache-dir \
     apache-airflow-providers-apache-spark \
     boto3 \
     psycopg2-binary \
-    requests
+    requests \
+    pandas \
+    openpyxl \
+    pyarrow \
+    python-dotenv \
+    pyspark==3.5.5
