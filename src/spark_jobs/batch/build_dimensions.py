@@ -12,6 +12,8 @@
 
 import sys
 import os
+import psycopg2
+
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.functions import col, when, to_date, round, row_number, lit
 from pyspark.sql.functions import min, max, countDistinct, avg
@@ -21,6 +23,29 @@ from pyspark.sql.window import Window
 def upload_to_s3(df: DataFrame, file_name: str, output_path: str) -> None:
     print(f"Writing processed data to {output_path}{file_name}")
     df.write.mode("overwrite").parquet(f'{output_path}{file_name}')
+
+def truncate_warehouse_tables() -> None:
+    # Load database connection details dynamically from environment variables
+    db_host = os.getenv("DB_WAREHOUSE_HOST", "postgres-warehouse")
+    db_port = os.getenv("DB_WAREHOUSE_PORT", "5432")
+    db_name = os.getenv("DB_WAREHOUSE_NAME", "ecom_warehouse")
+    db_user = os.getenv("DB_WAREHOUSE_USER", "warehouse_user")
+    db_pass = os.getenv("DB_WAREHOUSE_PASSWORD", "warehouse_password")
+    
+    print("Connecting to PostgreSQL to truncate tables with CASCADE...")
+    conn = psycopg2.connect(
+        host=db_host,
+        port=db_port,
+        database=db_name,
+        user=db_user,
+        password=db_pass
+    )
+    conn.autocommit = True
+    cursor = conn.cursor()
+    cursor.execute("TRUNCATE TABLE fact_orders, dim_customer, dim_product, dim_date, dim_country CASCADE;")
+    print("Analytical tables truncated successfully!")
+    cursor.close()
+    conn.close()
 
 def write_to_postgres(df: DataFrame, table_name: str) -> None:
     # Load database connection details dynamically from environment variables
@@ -40,8 +65,7 @@ def write_to_postgres(df: DataFrame, table_name: str) -> None:
       .option("user", db_user) \
       .option("password", db_pass) \
       .option("driver", "org.postgresql.Driver") \
-      .option("truncate", "true") \
-      .mode("overwrite") \
+      .mode("append") \
       .save()
 
 def _dim_customer(df_orders: DataFrame, output_path: str) -> DataFrame:
@@ -195,6 +219,9 @@ def main():
 
     print(f"Reading Cleaned orders from {input_path}")
     df_orders = spark.read.parquet(input_path)
+
+    # Truncate warehouse tables first with CASCADE to handle foreign key dependencies
+    truncate_warehouse_tables()
 
     # Building Tables (In-Memory Pipeline)
     df_cust = _dim_customer(df_orders, output_path)
