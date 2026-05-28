@@ -16,6 +16,7 @@ RUN pip install --no-cache-dir \
     kafka-python-ng \
     pandas \
     openpyxl \
+    boto3 \
     requests
 
 # Copy the producer source code and helper utilities into the container
