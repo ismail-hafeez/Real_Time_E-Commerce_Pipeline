@@ -17,8 +17,9 @@ RUN pip install --no-cache-dir \
     pandas \
     openpyxl \
     boto3 \
-    requests
-
+    requests \
+    pyarrow 
+    
 # Copy the producer source code and helper utilities into the container
 COPY ./src/producers /app/producers
 COPY ./src/utils /app/utils
