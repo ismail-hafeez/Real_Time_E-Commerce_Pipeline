@@ -74,12 +74,16 @@ services:
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-broker:9093
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       # Listener configuration
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-broker:9092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       # Cluster ID
       CLUSTER_ID: ecom-pipeline-kafka-cluster-01
+      # Single-node replica configurations (crucial to allow __consumer_offsets auto-creation)
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
     volumes:
       - kafka-data:/var/lib/kafka/data
 
@@ -213,15 +217,22 @@ services:
       dockerfile: ./docker/producer/Dockerfile
     container_name: order-producer
     environment:
+      # Kafka connection
       - KAFKA_BOOTSTRAP_SERVERS=kafka-broker:9092
+      - KAFKA_TOPIC=${KAFKA_TOPIC:-orders.raw}
+      # Producer mode: "test" (100 rows @ 5/sec) or "full" (all rows @ 200/sec)
+      - PRODUCER_MODE=${PRODUCER_MODE:-test}
+      # AWS credentials — forwarded from .env to read raw data from S3
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
     volumes:
       - ./src/producers:/app/producers
       - ./src/utils:/app/utils
-      - ./data:/app/data
     depends_on:
-      - kafka-broker
-    profiles:
-      - tools # This profile makes it optional, so it only runs when explicitly called
+      kafka-broker:
+        condition: service_started
 
 volumes:
   postgres-warehouse-data:
