@@ -88,7 +88,7 @@ def produce_events(producer: KafkaProducer, df: pd.DataFrame, max_rows: int, row
     for _, row in df.iterrows():
         # Converting row -> event dict
         event = row_to_event(row)
-        # Send event to Kafka
+        # Send event to Kafka 
         producer.send(KAFKA_TOPIC, value=event) 
         sent += 1
 
