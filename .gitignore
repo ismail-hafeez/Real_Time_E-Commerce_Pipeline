@@ -1,4 +1,7 @@
+# Secrets
 .env
+
+# Folders
 data/
 logs/
 venv/
