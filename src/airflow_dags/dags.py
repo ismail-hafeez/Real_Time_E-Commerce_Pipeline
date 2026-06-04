@@ -46,6 +46,7 @@ with DAG(
         application='/opt/airflow/spark_jobs/batch/clean_transform.py',
         conn_id='spark_default',
         application_args=[os.getenv('S3_BUCKET_NAME', 'fallback-bucket')],
+        packages='org.apache.hadoop:hadoop-aws:3.3.4',
     )
 
     # Task 4: Spark Build Star Schema
@@ -54,6 +55,7 @@ with DAG(
         application='/opt/airflow/spark_jobs/batch/build_dimensions.py',
         conn_id='spark_default',
         application_args=[os.getenv('S3_BUCKET_NAME', 'fallback-bucket')],
+        packages='org.apache.hadoop:hadoop-aws:3.3.4,org.postgresql:postgresql:42.7.2',
     )
 
     # Task Dependencies
