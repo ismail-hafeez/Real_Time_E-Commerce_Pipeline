@@ -20,7 +20,7 @@ def upload_to_s3(df: pd.DataFrame, s3_key: str) -> None:
     print("Converting to Parquet...")
     parquet_buffer = io.BytesIO()
     # Write to buffer using pyarrow
-    df.to_parquet(parquet_buffer, index=False, engine='pyarrow')
+    df.to_parquet(parquet_buffer, index=False, engine='pyarrow', coerce_timestamps='us')
 
     s3_bucket = os.getenv('S3_BUCKET_NAME')
     print(f"Uploading to s3://{s3_bucket}/{s3_key}...")
