@@ -1,5 +1,10 @@
 ipykernel
 pandas
 boto3
-dotenv
+python-dotenv
 openpyxl
+duckdb
+requests
+pyarrow
+fsspec
+s3fs
